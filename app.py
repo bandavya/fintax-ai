@@ -8,7 +8,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
 
 from data_generator import generate_transactions
 from preprocessing import preprocess, train_categorizer, categorize
-from anomaly_detection import detect_anomalies, evaluate_against_ground_truth
+from anomaly_detection import detect_anomalies, evaluate_against_ground_truth, compare_detectors
 from llm_insights import generate_insights
 
 st.set_page_config(page_title="FinPulse", page_icon="💳", layout="wide")
@@ -86,6 +86,15 @@ st.dataframe(
     .style.format({"amount": "${:.2f}", "anomaly_score": "{:.3f}"}),
     use_container_width=True,
 )
+
+with st.expander("Compare detection methods (Isolation Forest vs LOF vs z-score baseline)"):
+    comparison_df = compare_detectors(df, contamination=anomaly_rate)
+    st.dataframe(comparison_df, use_container_width=True)
+    st.caption(
+        "Precision/recall/F1 measured against the synthetic ground-truth anomalies. "
+        "Isolation Forest and LOF use the same engineered features; the baseline uses "
+        "only category-relative amount z-score."
+    )
 
 # --- LLM Insights ---
 st.subheader("🧠 LLM-generated insights")

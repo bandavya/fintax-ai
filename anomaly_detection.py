@@ -13,6 +13,7 @@ that category's own distribution, not the global one.
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import IsolationForest
+from sklearn.neighbors import LocalOutlierFactor
 from sklearn.metrics import precision_score, recall_score, f1_score
 
 
@@ -53,6 +54,53 @@ def detect_anomalies(df: pd.DataFrame, contamination=0.03):
     featured["predicted_anomaly"] = raw_scores == -1
 
     return featured, model
+
+
+def detect_anomalies_lof(df: pd.DataFrame, contamination=0.03):
+    """Local Outlier Factor: a density-based alternative to Isolation Forest.
+    Where Isolation Forest isolates points via random partitioning, LOF flags
+    a point based on how much sparser its neighborhood is than its
+    neighbors' neighborhoods -- better suited to local, cluster-relative
+    anomalies; worse suited to high-dimensional sparse features."""
+    featured, feature_cols = engineer_features(df)
+    X = featured[feature_cols].fillna(0)
+
+    model = LocalOutlierFactor(n_neighbors=20, contamination=contamination)
+    raw_labels = model.fit_predict(X)
+    featured["anomaly_score"] = model.negative_outlier_factor_
+    featured["predicted_anomaly"] = raw_labels == -1
+    return featured, model
+
+
+def detect_anomalies_zscore_baseline(df: pd.DataFrame, threshold=3.0):
+    """Naive baseline: flag anything more than `threshold` category-relative
+    std devs from its category mean. Univariate and easy to explain, but
+    misses multivariate patterns (e.g. a normal amount on an unusual day-of-
+    month for that category). Included so Isolation Forest/LOF's value can
+    be measured against a simple rule, not just asserted."""
+    featured, _ = engineer_features(df)
+    featured["anomaly_score"] = -featured["amount_zscore_in_category"].abs()
+    featured["predicted_anomaly"] = featured["amount_zscore_in_category"].abs() > threshold
+    return featured, None
+
+
+def compare_detectors(df: pd.DataFrame, contamination=0.03):
+    """Run all three detectors and return a comparison table of precision/
+    recall/F1 against ground truth. This is the artifact to point to when
+    asked 'why Isolation Forest' -- an actual measured comparison, not a
+    justification after the fact."""
+    results = {}
+    for name, fn in [
+        ("Isolation Forest", lambda d: detect_anomalies(d, contamination=contamination)),
+        ("Local Outlier Factor", lambda d: detect_anomalies_lof(d, contamination=contamination)),
+        ("Z-score baseline", lambda d: detect_anomalies_zscore_baseline(d)),
+    ]:
+        featured, _ = fn(df)
+        metrics = evaluate_against_ground_truth(featured)
+        if metrics:
+            results[name] = metrics
+
+    return pd.DataFrame(results).T.reset_index().rename(columns={"index": "method"})
 
 
 def evaluate_against_ground_truth(featured_df: pd.DataFrame):
